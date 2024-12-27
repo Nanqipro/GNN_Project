@@ -23,8 +23,6 @@ from torch_geometric.nn import TopKPooling, SAGEConv, global_mean_pool
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-# desired_gpu_id = 0 # 设置为所需的显卡编号，例如0
-
 # 设置数据集下载链接（请根据实际情况修改）
 CLICK_DATA_URL = 'https://example.com/path/to/yoochoose-clicks.dat'  # 替换为实际下载链接
 BUY_DATA_URL = 'https://example.com/path/to/yoochoose-buys.dat'      # 替换为实际下载链接
@@ -88,12 +86,6 @@ def load_and_preprocess_data(clicks_path, buys_path, download=False):
     print("标记是否有购买...")
     df_clicks['label'] = df_clicks['session_id'].isin(df_buys['session_id']).astype(int)
 
-    # # 数据采样以加速建模
-    # print("采样部分数据...")
-    # sampled_session_id = np.random.choice(df_clicks.session_id.unique(), 100000, replace=False)
-    # df_clicks = df_clicks.loc[df_clicks.session_id.isin(sampled_session_id)]
-    # print(f"样本筛选完成，剩余会话数: {len(df_clicks.session_id.unique())}")
-
     return df_clicks, df_buys, item_encoder
 
 # 定义自定义数据集
@@ -147,22 +139,21 @@ class YooChooseBinaryDataset(InMemoryDataset):
         data, slices = self.collate(data_list)
         torch.save((data, slices), self.processed_paths[0])
 
-        
 # 定义图神经网络模型
 class GNNModel(torch.nn.Module):
-    def __init__(self, num_items, embed_dim=128):
+    def __init__(self, num_items, embed_dim=128):  #测试用例2 增加嵌入维度以增加参数量
         super(GNNModel, self).__init__()
         self.embed_dim = embed_dim
         self.item_embedding = torch.nn.Embedding(num_embeddings=num_items + 10, embedding_dim=embed_dim)
 
-        self.conv1 = SAGEConv(embed_dim, 128)
-        self.pool1 = TopKPooling(128, ratio=0.8)
-        self.conv2 = SAGEConv(128, 128)
-        self.pool2 = TopKPooling(128, ratio=0.8)
-        self.conv3 = SAGEConv(128, 128)
-        self.pool3 = TopKPooling(128, ratio=0.8)
+        self.conv1 = SAGEConv(embed_dim, 128)  # 测试用例3：增加隐藏单元数
+        self.pool1 = TopKPooling(256, ratio=0.8)
+        self.conv2 = SAGEConv(256, 256)
+        self.pool2 = TopKPooling(256, ratio=0.8)
+        self.conv3 = SAGEConv(256, 256)
+        self.pool3 = TopKPooling(256, ratio=0.8)
 
-        self.lin1 = torch.nn.Linear(128, 128)
+        self.lin1 = torch.nn.Linear(256, 128)
         self.lin2 = torch.nn.Linear(128, 64)
         self.lin3 = torch.nn.Linear(64, 1)
 
@@ -207,7 +198,7 @@ class GNNModel(torch.nn.Module):
         return x
 
 # 训练函数
-def train(model, loader, optimizer, criterion, device):
+def train(model, loader, optimizer, criterion, device, constraint=None, lambda_reg=1e-4):
     model.train()
     total_loss = 0
     all_preds = []
@@ -215,11 +206,18 @@ def train(model, loader, optimizer, criterion, device):
 
     for data in loader:
         data = data.to(device, non_blocking=True)  # 使用 non_blocking 加速 GPU 数据传输
-        # data = data.to(device)
         optimizer.zero_grad()
         output = model(data)
         label = data.y.to(device)
         loss = criterion(output, label)
+        
+        # 添加约束（例如，限制模型参数的L2范数）
+        if constraint == 'L2':
+            l2_norm = torch.tensor(0., device=device)
+            for param in model.parameters():
+                l2_norm += torch.norm(param, 2)
+            loss += lambda_reg * l2_norm
+
         loss.backward()
         optimizer.step()
         total_loss += loss.item() * data.num_graphs
@@ -235,7 +233,7 @@ def train(model, loader, optimizer, criterion, device):
     return avg_loss, accuracy
 
 # 评估函数
-def evaluate(model, loader, device):
+def evaluate(model, loader, device, constraint=None, lambda_reg=1e-4):
     model.eval()
     all_preds = []
     all_labels = []
@@ -246,10 +244,17 @@ def evaluate(model, loader, device):
     with torch.no_grad():
         for data in loader:
             data = data.to(device, non_blocking=True)  # 使用 non_blocking 加速 GPU 数据传输
-            # data = data.to(device)
             output = model(data)
             label = data.y.to(device)
             loss = criterion(output, label)
+            
+            # 添加约束（例如，限制模型参数的L2范数）
+            if constraint == 'L2':
+                l2_norm = torch.tensor(0., device=device)
+                for param in model.parameters():
+                    l2_norm += torch.norm(param, 2)
+                loss += lambda_reg * l2_norm
+
             total_loss += loss.item() * data.num_graphs
 
             probs = output.cpu().numpy()
@@ -287,19 +292,20 @@ def main():
     for i in range(torch.cuda.device_count()):
         print(f"显卡{i}名称: {torch.cuda.get_device_name(i)}")
         
-    desired_gpu_id = 0  # 设置为所需的显卡编号，例如0
+    desired_gpu_id = 1  # 设置为所需的显卡编号，例如0
 
-    # device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     device = torch.device(f'cuda:{desired_gpu_id}' if torch.cuda.is_available() else 'cpu')
-
     
     torch.backends.cudnn.benchmark = True  # 加速 GPU 并行计算
     print(f"使用设备: {device}")
     
     # 打印设备信息
-    print(f"可用的显卡: {desired_gpu_id}")
-    print(f"当前使用的设备: {torch.cuda.current_device()}")
-    print(f"设备名称: {torch.cuda.get_device_name(torch.cuda.current_device())}")
+    if torch.cuda.is_available():
+        print(f"可用的显卡: {desired_gpu_id}")
+        print(f"当前使用的设备: {torch.cuda.current_device()}")
+        print(f"设备名称: {torch.cuda.get_device_name(torch.cuda.current_device())}")
+    else:
+        print("使用CPU进行训练。")
 
     # 数据路径
     clicks_path = './datasets/yoochoose-clicks.dat'  # 请根据实际情况修改路径
@@ -327,20 +333,27 @@ def main():
     train_loader = DataLoader(train_dataset, batch_size=512, shuffle=True, pin_memory=True, num_workers=4)
     val_loader = DataLoader(val_dataset, batch_size=512, shuffle=False, pin_memory=True, num_workers=4)
 
-    # # 创建数据加载器
-    # train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
-    # val_loader = DataLoader(val_dataset, batch_size=64, shuffle=False)
-
     # 初始化模型、优化器和损失函数
     print("初始化模型、优化器和损失函数...")
     model = GNNModel(num_items=num_items).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    optimizer_adam = torch.optim.Adam(model.parameters(), lr=0.001)
+    optimizer_sgd = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9)  # 新增SGD优化器
+    optimizer_rmsprop = torch.optim.RMSprop(model.parameters(), lr=0.001, alpha=0.99)  # 新增RMSprop优化器
     criterion = torch.nn.BCELoss()
 
+    # 定义优化器列表
+    optimizers = {
+        'Adam': optimizer_adam,
+        'SGD': optimizer_sgd,
+        'RMSprop': optimizer_rmsprop
+    }
 
-    # 训练模型
-    epochs = 10
+    # 训练参数
+    epochs = 50
+
+    # 初始化历史记录
     history = {
+        'optimizer': [],
         'train_loss': [],
         'train_accuracy': [],
         'val_loss': [],
@@ -350,91 +363,128 @@ def main():
         'val_f1_score': [],
         'val_roc_auc': []
     }
-    all_val_labels = []
-    all_val_probs = []
-    all_val_preds = []
 
-    print("开始训练模型...")
-    for epoch in range(1, epochs + 1):
-        train_loss, train_accuracy = train(model, train_loader, optimizer, criterion, device)
-        val_metrics, val_labels, val_probs, val_preds = evaluate(model, val_loader, device)
+    # 保存每种优化器的结果
+    results_dir = './results/'
+    os.makedirs(results_dir, exist_ok=True)
 
-        history['train_loss'].append(train_loss)
-        history['train_accuracy'].append(train_accuracy)
-        history['val_loss'].append(val_metrics['loss'])
-        history['val_accuracy'].append(val_metrics['accuracy'])
-        history['val_precision'].append(val_metrics['precision'])
-        history['val_recall'].append(val_metrics['recall'])
-        history['val_f1_score'].append(val_metrics['f1_score'])
-        history['val_roc_auc'].append(val_metrics['roc_auc'])
+    # 定义约束参数
+    constraint = 'L2'  # 使用L2范数作为约束
+    lambda_reg = 1e-4  # 约束的权重
 
-        all_val_labels.extend(val_labels)
-        all_val_probs.extend(val_probs)
-        all_val_preds.extend(val_preds)
+    for opt_name, optimizer in optimizers.items():
+        print(f"\n开始使用优化器: {opt_name}")
+        current_history = {
+            'train_loss': [],
+            'train_accuracy': [],
+            'val_loss': [],
+            'val_accuracy': [],
+            'val_precision': [],
+            'val_recall': [],
+            'val_f1_score': [],
+            'val_roc_auc': []
+        }
+        all_val_labels = []
+        all_val_probs = []
+        all_val_preds = []
 
-        print(f'Epoch {epoch}/{epochs}, '
-              f'Train Loss: {train_loss:.4f}, Train Acc: {train_accuracy:.4f}, '
-              f'Val Loss: {val_metrics["loss"]:.4f}, Val Acc: {val_metrics["accuracy"]:.4f}, '
-              f'Val ROC AUC: {val_metrics["roc_auc"]:.4f}, Val Precision: {val_metrics["precision"]:.4f}, '
-              f'Val Recall: {val_metrics["recall"]:.4f}, Val F1 Score: {val_metrics["f1_score"]:.4f}')
+        for epoch in range(1, epochs + 1):
+            train_loss, train_accuracy = train(model, train_loader, optimizer, criterion, device, constraint=constraint, lambda_reg=lambda_reg)
+            val_metrics, val_labels, val_probs, val_preds = evaluate(model, val_loader, device, constraint=constraint, lambda_reg=lambda_reg)
 
-    # 最终评估
-    final_metrics, final_labels, final_probs, final_preds = evaluate(model, val_loader, device)
-    print(f'最终验证集 ROC AUC: {final_metrics["roc_auc"]:.4f}')
+            current_history['train_loss'].append(train_loss)
+            current_history['train_accuracy'].append(train_accuracy)
+            current_history['val_loss'].append(val_metrics['loss'])
+            current_history['val_accuracy'].append(val_metrics['accuracy'])
+            current_history['val_precision'].append(val_metrics['precision'])
+            current_history['val_recall'].append(val_metrics['recall'])
+            current_history['val_f1_score'].append(val_metrics['f1_score'])
+            current_history['val_roc_auc'].append(val_metrics['roc_auc'])
 
-    # 可视化
-    print("开始可视化训练过程...")
+            all_val_labels.extend(val_labels)
+            all_val_probs.extend(val_probs)
+            all_val_preds.extend(val_preds)
 
-    # 1. 绘制损失曲线
-    plt.figure(figsize=(10, 6))
-    plt.plot(range(1, epochs + 1), history['train_loss'], label='Train Loss')
-    plt.plot(range(1, epochs + 1), history['val_loss'], label='Validation Loss')
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.title('Loss Curve')
-    plt.legend()
-    plt.grid(True)
-    plt.savefig(os.path.join(results_dir, 'loss_curve.png'))
-    plt.close()
+            print(f'[Optimizer: {opt_name}] Epoch {epoch}/{epochs}, '
+                  f'Train Loss: {train_loss:.4f}, Train Acc: {train_accuracy:.4f}, '
+                  f'Val Loss: {val_metrics["loss"]:.4f}, Val Acc: {val_metrics["accuracy"]:.4f}, '
+                  f'Val ROC AUC: {val_metrics["roc_auc"]:.4f}, Val Precision: {val_metrics["precision"]:.4f}, '
+                  f'Val Recall: {val_metrics["recall"]:.4f}, Val F1 Score: {val_metrics["f1_score"]:.4f}')
 
-    # 2. 绘制准确率曲线
-    plt.figure(figsize=(10, 6))
-    plt.plot(range(1, epochs + 1), history['train_accuracy'], label='Train Accuracy')
-    plt.plot(range(1, epochs + 1), history['val_accuracy'], label='Validation Accuracy')
-    plt.xlabel('Epoch')
-    plt.ylabel('Accuracy')
-    plt.title('Accuracy Curve')
-    plt.legend()
-    plt.grid(True)
-    plt.savefig(os.path.join(results_dir, 'accuracy_curve.png'))
-    plt.close()
+        # 保存历史记录
+        history['optimizer'].append(opt_name)
+        for key in ['train_loss', 'train_accuracy', 'val_loss', 'val_accuracy', 'val_precision', 'val_recall', 'val_f1_score', 'val_roc_auc']:
+            history[key].append(current_history[key])
 
-    # 3. 绘制ROC曲线
-    from sklearn.metrics import roc_curve
+        # 可视化每个优化器的结果
+        print(f"开始可视化 {opt_name} 优化器的训练过程...")
 
-    fpr, tpr, thresholds = roc_curve(all_val_labels, all_val_probs)
-    plt.figure(figsize=(8, 6))
-    plt.plot(fpr, tpr, label=f'ROC Curve (AUC = {final_metrics["roc_auc"]:.4f})')
-    plt.plot([0, 1], [0, 1], 'k--', label='Random Guess')
-    plt.xlabel('False Positive Rate')
-    plt.ylabel('True Positive Rate')
-    plt.title('ROC Curve')
-    plt.legend()
-    plt.grid(True)
-    plt.savefig(os.path.join(results_dir, 'roc_curve.png'))
-    plt.close()
+        # 1. 绘制损失曲线
+        plt.figure(figsize=(10, 6))
+        plt.plot(range(1, epochs + 1), current_history['train_loss'], label='Train Loss')
+        plt.plot(range(1, epochs + 1), current_history['val_loss'], label='Validation Loss')
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss')
+        plt.title(f'Loss Curve ({opt_name})')
+        plt.legend()
+        plt.grid(True)
+        plt.savefig(os.path.join(results_dir, f'loss_curve_{opt_name}.png'))
+        plt.close()
 
-    # 4. 绘制混淆矩阵
-    cm = confusion_matrix(all_val_labels, all_val_preds)
-    plt.figure(figsize=(6, 5))
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=['Not Buy', 'Buy'], yticklabels=['Not Buy', 'Buy'])
-    plt.xlabel('Predicted Label')
-    plt.ylabel('True Label')
-    plt.title('Confusion Matrix')
-    plt.savefig(os.path.join(results_dir, 'confusion_matrix.png'))
-    plt.close()
+        # 2. 绘制准确率曲线
+        plt.figure(figsize=(10, 6))
+        plt.plot(range(1, epochs + 1), current_history['train_accuracy'], label='Train Accuracy')
+        plt.plot(range(1, epochs + 1), current_history['val_accuracy'], label='Validation Accuracy')
+        plt.xlabel('Epoch')
+        plt.ylabel('Accuracy')
+        plt.title(f'Accuracy Curve ({opt_name})')
+        plt.legend()
+        plt.grid(True)
+        plt.savefig(os.path.join(results_dir, f'accuracy_curve_{opt_name}.png'))
+        plt.close()
 
-    print(f"所有可视化图像已保存在 '{results_dir}' 文件夹下。")
+        # 3. 绘制ROC曲线
+        from sklearn.metrics import roc_curve
+
+        fpr, tpr, thresholds = roc_curve(all_val_labels, all_val_probs)
+        plt.figure(figsize=(8, 6))
+        plt.plot(fpr, tpr, label=f'ROC Curve (AUC = {val_metrics["roc_auc"]:.4f})')
+        plt.plot([0, 1], [0, 1], 'k--', label='Random Guess')
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+        plt.title(f'ROC Curve ({opt_name})')
+        plt.legend()
+        plt.grid(True)
+        plt.savefig(os.path.join(results_dir, f'roc_curve_{opt_name}.png'))
+        plt.close()
+
+        # 4. 绘制混淆矩阵
+        cm = confusion_matrix(all_val_labels, all_val_preds)
+        plt.figure(figsize=(6, 5))
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=['Not Buy', 'Buy'], yticklabels=['Not Buy', 'Buy'])
+        plt.xlabel('Predicted Label')
+        plt.ylabel('True Label')
+        plt.title(f'Confusion Matrix ({opt_name})')
+        plt.savefig(os.path.join(results_dir, f'confusion_matrix_{opt_name}.png'))
+        plt.close()
+
+        print(f"所有可视化图像已保存在 '{results_dir}' 文件夹下。")
+
+    # 保存整体历史记录（可选）
+    # 可以将history字典保存为CSV或其他格式以便后续分析
+    history_df = pd.DataFrame({
+        'Optimizer': history['optimizer'],
+        'Train Loss': [h for h in history['train_loss']],
+        'Train Accuracy': [h for h in history['train_accuracy']],
+        'Validation Loss': [h for h in history['val_loss']],
+        'Validation Accuracy': [h for h in history['val_accuracy']],
+        'Validation Precision': [h for h in history['val_precision']],
+        'Validation Recall': [h for h in history['val_recall']],
+        'Validation F1 Score': [h for h in history['val_f1_score']],
+        'Validation ROC AUC': [h for h in history['val_roc_auc']],
+    })
+    history_df.to_csv(os.path.join(results_dir, 'training_history.csv'), index=False)
+    print(f"训练历史记录已保存到 '{os.path.join(results_dir, 'training_history.csv')}'。")
 
 if __name__ == '__main__':
     main()
