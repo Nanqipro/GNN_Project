@@ -175,8 +175,8 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # 数据路径
-    clicks_path = 'yoochoose-clicks.dat'
-    buys_path = 'yoochoose-buys.dat'
+    clicks_path = './datasets/yoochoose-clicks.dat'
+    buys_path = './datasets/yoochoose-buys.dat'
 
     # 加载和预处理数据
     df_clicks, df_buys, item_encoder = load_and_preprocess_data(clicks_path, buys_path)

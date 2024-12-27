@@ -17,7 +17,8 @@ from sklearn.metrics import (
 from tqdm import tqdm
 import torch
 import torch.nn.functional as F
-from torch_geometric.data import InMemoryDataset, Data, DataLoader
+from torch_geometric.data import InMemoryDataset, Data
+from torch_geometric.loader import DataLoader
 from torch_geometric.nn import TopKPooling, SAGEConv, global_mean_pool
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -64,10 +65,10 @@ def load_and_preprocess_data(clicks_path, buys_path, download=False):
             raise FileNotFoundError(
                 f"数据文件未找到: {clicks_path} 或 {buys_path}。请设置 download=True 以自动下载。"
             )
-    
+
     # 读取点击数据
     print("读取点击数据...")
-    df_clicks = pd.read_csv(clicks_path, header=None)
+    df_clicks = pd.read_csv(clicks_path, header=None, dtype={3: 'str'}, low_memory=False)
     df_clicks.columns = ['session_id', 'timestamp', 'item_id', 'category']
 
     # 读取购买数据
@@ -85,6 +86,12 @@ def load_and_preprocess_data(clicks_path, buys_path, download=False):
     print("标记是否有购买...")
     df_clicks['label'] = df_clicks['session_id'].isin(df_buys['session_id']).astype(int)
 
+    # 数据采样以加速建模
+    print("采样部分数据...")
+    sampled_session_id = np.random.choice(df_clicks.session_id.unique(), 100000, replace=False)
+    df_clicks = df_clicks.loc[df_clicks.session_id.isin(sampled_session_id)]
+    print(f"样本筛选完成，剩余会话数: {len(df_clicks.session_id.unique())}")
+
     return df_clicks, df_buys, item_encoder
 
 # 定义自定义数据集
@@ -92,7 +99,7 @@ class YooChooseBinaryDataset(InMemoryDataset):
     def __init__(self, root, df, transform=None, pre_transform=None):
         self.df = df
         super(YooChooseBinaryDataset, self).__init__(root, transform, pre_transform)
-        self.data, self.slices = torch.load(self.processed_paths[0])
+        self.data, self.slices = torch.load(self.processed_paths[0], weights_only=True)
 
     @property
     def raw_file_names(self):
@@ -122,9 +129,9 @@ class YooChooseBinaryDataset(InMemoryDataset):
             x = torch.tensor(node_features, dtype=torch.long).unsqueeze(1)
 
             # 边索引
-            target_nodes = group['sess_item_id'].values[1:]
-            source_nodes = group['sess_item_id'].values[:-1]
-            edge_index = torch.tensor([source_nodes, target_nodes], dtype=torch.long)
+            target_nodes = np.array(group['sess_item_id'].values[1:])
+            source_nodes = np.array(group['sess_item_id'].values[:-1])
+            edge_index = torch.tensor(np.stack([source_nodes, target_nodes]), dtype=torch.long)
 
             # 标签
             y = torch.tensor([group['label'].values[0]], dtype=torch.float)
@@ -137,7 +144,7 @@ class YooChooseBinaryDataset(InMemoryDataset):
         print("保存处理后的数据...")
         data, slices = self.collate(data_list)
         torch.save((data, slices), self.processed_paths[0])
-
+        
 # 定义图神经网络模型
 class GNNModel(torch.nn.Module):
     def __init__(self, num_items, embed_dim=128):
@@ -304,8 +311,10 @@ def main():
     print(f"训练集大小: {len(train_dataset)}，验证集大小: {len(val_dataset)}")
 
     # 创建数据加载器
-    train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=64, shuffle=False)
+    # train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+    # val_loader = DataLoader(val_dataset, batch_size=64, shuffle=False)
+    train_loader = DataLoader(train_dataset, batch_size=512, shuffle=True, pin_memory=True, num_workers=4)
+    val_loader = DataLoader(val_dataset, batch_size=512, shuffle=False, pin_memory=True, num_workers=4)
 
     # 初始化模型、优化器和损失函数
     print("初始化模型、优化器和损失函数...")
