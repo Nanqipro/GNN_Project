@@ -20,6 +20,8 @@ import torch.nn.functional as F
 from torch_geometric.data import InMemoryDataset, Data
 from torch_geometric.loader import DataLoader
 from torch_geometric.nn import TopKPooling, SAGEConv, global_mean_pool
+import matplotlib
+matplotlib.use('Agg')  # 使用Agg后端，不需要GUI支持
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -328,6 +330,12 @@ def main():
     train_dataset = dataset[:train_size]
     val_dataset = dataset[train_size:]
     print(f"训练集大小: {len(train_dataset)}，验证集大小: {len(val_dataset)}")
+    
+    # # 检查标签分布
+    # train_labels = [data.y.item() for data in train_dataset]
+    # val_labels = [data.y.item() for data in val_dataset]
+    # print(f"训练集标签分布: {np.bincount(train_labels)}")
+    # print(f"验证集标签分布: {np.bincount(val_labels)}")
 
     # 创建数据加载器
     train_loader = DataLoader(train_dataset, batch_size=512, shuffle=True, pin_memory=True, num_workers=4)
@@ -374,6 +382,18 @@ def main():
 
     for opt_name, optimizer in optimizers.items():
         print(f"\n开始使用优化器: {opt_name}")
+        
+        # 重新初始化模型
+        model = GNNModel(num_items=num_items).to(device)
+    
+        # 根据优化器名称重新创建优化器
+        if opt_name == 'Adam':
+            optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+        elif opt_name == 'SGD':
+            optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
+        elif opt_name == 'RMSprop':
+            optimizer = torch.optim.RMSprop(model.parameters(), lr=0.001, alpha=0.99)
+        
         current_history = {
             'train_loss': [],
             'train_accuracy': [],
@@ -410,7 +430,8 @@ def main():
                   f'Val Loss: {val_metrics["loss"]:.4f}, Val Acc: {val_metrics["accuracy"]:.4f}, '
                   f'Val ROC AUC: {val_metrics["roc_auc"]:.4f}, Val Precision: {val_metrics["precision"]:.4f}, '
                   f'Val Recall: {val_metrics["recall"]:.4f}, Val F1 Score: {val_metrics["f1_score"]:.4f}')
-
+ 
+            
         # 保存历史记录
         history['optimizer'].append(opt_name)
         for key in ['train_loss', 'train_accuracy', 'val_loss', 'val_accuracy', 'val_precision', 'val_recall', 'val_f1_score', 'val_roc_auc']:

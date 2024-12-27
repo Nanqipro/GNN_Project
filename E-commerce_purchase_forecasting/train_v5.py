@@ -20,6 +20,8 @@ import torch.nn.functional as F
 from torch_geometric.data import InMemoryDataset, Data
 from torch_geometric.loader import DataLoader
 from torch_geometric.nn import TopKPooling, SAGEConv, global_mean_pool
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -374,6 +376,18 @@ def main():
 
     for opt_name, optimizer in optimizers.items():
         print(f"\n开始使用优化器: {opt_name}")
+        
+        # 重新初始化模型
+        model = GNNModel(num_items=num_items).to(device)
+    
+        # 根据优化器名称重新创建优化器
+        if opt_name == 'Adam':
+            optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+        elif opt_name == 'SGD':
+            optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
+        elif opt_name == 'RMSprop':
+            optimizer = torch.optim.RMSprop(model.parameters(), lr=0.001, alpha=0.99)
+        
         current_history = {
             'train_loss': [],
             'train_accuracy': [],
