@@ -148,12 +148,12 @@ class GNNModel(torch.nn.Module):
 
         self.conv1 = SAGEConv(embed_dim, 256)  # 测试用例3：增加隐藏单元数
         self.pool1 = TopKPooling(256, ratio=0.8)
-        self.conv2 = SAGEConv(256, 256)
-        self.pool2 = TopKPooling(256, ratio=0.8)
-        self.conv3 = SAGEConv(256, 256)
-        self.pool3 = TopKPooling(256, ratio=0.8)
+        self.conv2 = SAGEConv(256, 128)
+        self.pool2 = TopKPooling(128, ratio=0.8)
+        self.conv3 = SAGEConv(128, 128)
+        self.pool3 = TopKPooling(128, ratio=0.8)
 
-        self.lin1 = torch.nn.Linear(256, 128)
+        self.lin1 = torch.nn.Linear(128, 128)
         self.lin2 = torch.nn.Linear(128, 64)
         self.lin3 = torch.nn.Linear(64, 1)
 
