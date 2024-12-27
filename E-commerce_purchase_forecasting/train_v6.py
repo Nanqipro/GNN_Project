@@ -349,7 +349,7 @@ def main():
     }
 
     # 训练参数
-    epochs = 50
+    epochs = 30
 
     # 初始化历史记录
     history = {
@@ -365,7 +365,7 @@ def main():
     }
 
     # 保存每种优化器的结果
-    results_dir = './results/'
+    results_dir = './results_v6/'
     os.makedirs(results_dir, exist_ok=True)
 
     # 定义约束参数

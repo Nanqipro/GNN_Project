@@ -301,6 +301,11 @@ def main():
     print(f"当前使用的设备: {torch.cuda.current_device()}")
     print(f"设备名称: {torch.cuda.get_device_name(torch.cuda.current_device())}")
 
+    # 定义并创建结果保存目录
+    results_dir = './results_v3/'  # 您可以根据需要修改路径
+    os.makedirs(results_dir, exist_ok=True)
+    print(f"结果将保存在 '{results_dir}' 目录下。")
+
     # 数据路径
     clicks_path = './datasets/yoochoose-clicks.dat'  # 请根据实际情况修改路径
     buys_path = './datasets/yoochoose-buys.dat'      # 请根据实际情况修改路径
@@ -339,7 +344,7 @@ def main():
 
 
     # 训练模型
-    epochs = 10
+    epochs = 30
     history = {
         'train_loss': [],
         'train_accuracy': [],
