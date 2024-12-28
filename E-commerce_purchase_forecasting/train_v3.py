@@ -358,6 +358,10 @@ def main():
     all_val_labels = []
     all_val_probs = []
     all_val_preds = []
+    
+    best_val_loss = float('inf')  # 当前最佳的验证集loss
+    patience = 5                  # 允许多少个epoch验证集loss不提升
+    patience_counter = 0          # 统计验证集loss连续多久未提升
 
     print("开始训练模型...")
     for epoch in range(1, epochs + 1):
@@ -382,6 +386,20 @@ def main():
               f'Val Loss: {val_metrics["loss"]:.4f}, Val Acc: {val_metrics["accuracy"]:.4f}, '
               f'Val ROC AUC: {val_metrics["roc_auc"]:.4f}, Val Precision: {val_metrics["precision"]:.4f}, '
               f'Val Recall: {val_metrics["recall"]:.4f}, Val F1 Score: {val_metrics["f1_score"]:.4f}')
+        
+    # Early Stopping 逻辑
+    current_val_loss = val_metrics['loss']
+    if current_val_loss < best_val_loss:
+        best_val_loss = current_val_loss
+        patience_counter = 0
+        # 如果需要在早停后恢复到最佳权重，可以在这里保存模型
+        torch.save(model.state_dict(), os.path.join(results_dir, 'best_model.pth'))
+    else:
+        patience_counter += 1
+        if patience_counter >= patience:
+            print("验证集Loss连续 {} epoch 没有提升，触发早停！".format(patience))
+            break  # 结束训练循环
+
 
     # 最终评估
     final_metrics, final_labels, final_probs, final_preds = evaluate(model, val_loader, device)
@@ -393,7 +411,7 @@ def main():
     # 1. 绘制损失曲线
     plt.figure(figsize=(10, 6))
     plt.plot(range(1, epochs + 1), history['train_loss'], label='Train Loss')
-    plt.plot(range(1, epochs + 1), history['val_loss'], label='Validation Loss')
+    # plt.plot(range(1, epochs + 1), history['val_loss'], label='Validation Loss')
     plt.xlabel('Epoch')
     plt.ylabel('Loss')
     plt.title('Loss Curve')
@@ -405,7 +423,7 @@ def main():
     # 2. 绘制准确率曲线
     plt.figure(figsize=(10, 6))
     plt.plot(range(1, epochs + 1), history['train_accuracy'], label='Train Accuracy')
-    plt.plot(range(1, epochs + 1), history['val_accuracy'], label='Validation Accuracy')
+    # plt.plot(range(1, epochs + 1), history['val_accuracy'], label='Validation Accuracy')
     plt.xlabel('Epoch')
     plt.ylabel('Accuracy')
     plt.title('Accuracy Curve')

@@ -366,6 +366,10 @@ def main():
         'val_roc_auc': []
     }
 
+    best_val_loss = float('inf')  # 当前最佳的验证集 loss
+    patience = 5                  # 连续多少个 epoch 验证集 loss 不提升就停止
+    patience_counter = 0          # 已经连续多少个 epoch 验证集 loss 没有提升
+
     # 保存每种优化器的结果
     results_dir = './results_v6/'
     os.makedirs(results_dir, exist_ok=True)
@@ -425,6 +429,21 @@ def main():
                   f'Val ROC AUC: {val_metrics["roc_auc"]:.4f}, Val Precision: {val_metrics["precision"]:.4f}, '
                   f'Val Recall: {val_metrics["recall"]:.4f}, Val F1 Score: {val_metrics["f1_score"]:.4f}')
 
+            # ------------------ 在这里插入 Early Stopping 判断 ------------------
+            current_val_loss = val_metrics['loss']
+            if current_val_loss < best_val_loss:
+                best_val_loss = current_val_loss
+                patience_counter = 0
+        
+                # 如果需要在触发Early Stopping后恢复最佳模型权重，可以在这里保存
+                torch.save(model.state_dict(), os.path.join(results_dir, 'best_model.pth'))
+            else:
+                patience_counter += 1
+                if patience_counter >= patience:
+                    print(f"验证集 Loss 连续 {patience} 轮没有提升，触发早停！")
+                    break
+            # -------------------------------------------------------------------      
+
         # 保存历史记录
         history['optimizer'].append(opt_name)
         for key in ['train_loss', 'train_accuracy', 'val_loss', 'val_accuracy', 'val_precision', 'val_recall', 'val_f1_score', 'val_roc_auc']:
@@ -436,7 +455,7 @@ def main():
         # 1. 绘制损失曲线
         plt.figure(figsize=(10, 6))
         plt.plot(range(1, epochs + 1), current_history['train_loss'], label='Train Loss')
-        plt.plot(range(1, epochs + 1), current_history['val_loss'], label='Validation Loss')
+        # plt.plot(range(1, epochs + 1), current_history['val_loss'], label='Validation Loss')
         plt.xlabel('Epoch')
         plt.ylabel('Loss')
         plt.title(f'Loss Curve ({opt_name})')
@@ -448,7 +467,7 @@ def main():
         # 2. 绘制准确率曲线
         plt.figure(figsize=(10, 6))
         plt.plot(range(1, epochs + 1), current_history['train_accuracy'], label='Train Accuracy')
-        plt.plot(range(1, epochs + 1), current_history['val_accuracy'], label='Validation Accuracy')
+        # plt.plot(range(1, epochs + 1), current_history['val_accuracy'], label='Validation Accuracy')
         plt.xlabel('Epoch')
         plt.ylabel('Accuracy')
         plt.title(f'Accuracy Curve ({opt_name})')
