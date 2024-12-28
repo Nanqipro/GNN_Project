@@ -408,10 +408,14 @@ def main():
     # 可视化
     print("开始可视化训练过程...")
 
+    # 确定实际训练的epoch数量
+    actual_epochs = len(history['train_loss'])  # 新增：获取实际训练的epoch数量
+    print(f"实际训练的epoch数量: {actual_epochs}")  # 新增：打印实际训练的epoch数量
+
     # 1. 绘制损失曲线
     plt.figure(figsize=(10, 6))
-    plt.plot(range(1, epochs + 1), history['train_loss'], label='Train Loss')
-    # plt.plot(range(1, epochs + 1), history['val_loss'], label='Validation Loss')
+    plt.plot(range(1, actual_epochs + 1), history['train_loss'], label='Train Loss')  # 修改：使用实际epoch数量
+    # plt.plot(range(1, actual_epochs + 1), history['val_loss'], label='Validation Loss')  # 如果需要，可以取消注释
     plt.xlabel('Epoch')
     plt.ylabel('Loss')
     plt.title('Loss Curve')
@@ -422,8 +426,8 @@ def main():
 
     # 2. 绘制准确率曲线
     plt.figure(figsize=(10, 6))
-    plt.plot(range(1, epochs + 1), history['train_accuracy'], label='Train Accuracy')
-    # plt.plot(range(1, epochs + 1), history['val_accuracy'], label='Validation Accuracy')
+    plt.plot(range(1, actual_epochs + 1), history['train_accuracy'], label='Train Accuracy')  # 修改：使用实际epoch数量
+    # plt.plot(range(1, actual_epochs + 1), history['val_accuracy'], label='Validation Accuracy')  # 如果需要，可以取消注释
     plt.xlabel('Epoch')
     plt.ylabel('Accuracy')
     plt.title('Accuracy Curve')

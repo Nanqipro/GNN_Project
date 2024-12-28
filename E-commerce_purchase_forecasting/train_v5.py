@@ -21,7 +21,7 @@ from torch_geometric.data import InMemoryDataset, Data
 from torch_geometric.loader import DataLoader
 from torch_geometric.nn import TopKPooling, SAGEConv, global_mean_pool
 import matplotlib
-matplotlib.use('Agg')
+matplotlib.use('Agg')  # 使用Agg后端，不需要GUI支持
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -366,11 +366,6 @@ def main():
         'val_roc_auc': []
     }
     
-    best_val_loss = float('inf')  # 当前最佳的验证集 loss
-    patience = 5                  # 连续多少个 epoch 验证集 loss 不提升就停止
-    patience_counter = 0          # 已经连续多少个 epoch 验证集 loss 没有提升
-
-
     # 保存每种优化器的结果
     results_dir = './results_v5/'
     os.makedirs(results_dir, exist_ok=True)
@@ -407,6 +402,11 @@ def main():
         all_val_probs = []
         all_val_preds = []
 
+        # **新增**：在每个优化器开始前重置早停相关参数
+        best_val_loss = float('inf')  # 当前最佳的验证集 loss
+        patience = 5                  # 连续多少个 epoch 验证集 loss 不提升就停止
+        patience_counter = 0          # 已经连续多少个 epoch 验证集 loss 没有提升
+
         for epoch in range(1, epochs + 1):
             train_loss, train_accuracy = train(model, train_loader, optimizer, criterion, device, constraint=constraint, lambda_reg=lambda_reg)
             val_metrics, val_labels, val_probs, val_preds = evaluate(model, val_loader, device, constraint=constraint, lambda_reg=lambda_reg)
@@ -435,18 +435,16 @@ def main():
             if current_val_loss < best_val_loss:
                 best_val_loss = current_val_loss
                 patience_counter = 0
-        
-                # 如果需要在触发Early Stopping后恢复最佳模型权重，可以在这里保存
-                torch.save(model.state_dict(), os.path.join(results_dir, 'best_model.pth'))
+
+                # 保存最佳模型权重，包含优化器名称以避免覆盖
+                torch.save(model.state_dict(), os.path.join(results_dir, f'best_model_{opt_name}.pth'))
             else:
                 patience_counter += 1
                 if patience_counter >= patience:
                     print(f"验证集 Loss 连续 {patience} 轮没有提升，触发早停！")
                     break
             # -------------------------------------------------------------------
- 
-        
-        
+
         # 保存历史记录
         history['optimizer'].append(opt_name)
         for key in ['train_loss', 'train_accuracy', 'val_loss', 'val_accuracy', 'val_precision', 'val_recall', 'val_f1_score', 'val_roc_auc']:
@@ -455,10 +453,14 @@ def main():
         # 可视化每个优化器的结果
         print(f"开始可视化 {opt_name} 优化器的训练过程...")
 
+        # **新增**：确定实际训练的epoch数量
+        actual_epochs = len(current_history['train_loss'])
+        print(f"[Optimizer: {opt_name}] 实际训练的epoch数量: {actual_epochs}")
+
         # 1. 绘制损失曲线
         plt.figure(figsize=(10, 6))
-        plt.plot(range(1, epochs + 1), current_history['train_loss'], label='Train Loss')
-        # plt.plot(range(1, epochs + 1), current_history['val_loss'], label='Validation Loss')
+        plt.plot(range(1, actual_epochs + 1), current_history['train_loss'], label='Train Loss')
+        # plt.plot(range(1, actual_epochs + 1), current_history['val_loss'], label='Validation Loss')  # 如果需要，可以取消注释
         plt.xlabel('Epoch')
         plt.ylabel('Loss')
         plt.title(f'Loss Curve ({opt_name})')
@@ -469,8 +471,8 @@ def main():
 
         # 2. 绘制准确率曲线
         plt.figure(figsize=(10, 6))
-        plt.plot(range(1, epochs + 1), current_history['train_accuracy'], label='Train Accuracy')
-        # plt.plot(range(1, epochs + 1), current_history['val_accuracy'], label='Validation Accuracy')
+        plt.plot(range(1, actual_epochs + 1), current_history['train_accuracy'], label='Train Accuracy')
+        # plt.plot(range(1, actual_epochs + 1), current_history['val_accuracy'], label='Validation Accuracy')  # 如果需要，可以取消注释
         plt.xlabel('Epoch')
         plt.ylabel('Accuracy')
         plt.title(f'Accuracy Curve ({opt_name})')
