@@ -344,7 +344,7 @@ def main():
 
 
     # 训练模型
-    epochs = 30
+    epochs = 150
     history = {
         'train_loss': [],
         'train_accuracy': [],
@@ -387,18 +387,18 @@ def main():
               f'Val ROC AUC: {val_metrics["roc_auc"]:.4f}, Val Precision: {val_metrics["precision"]:.4f}, '
               f'Val Recall: {val_metrics["recall"]:.4f}, Val F1 Score: {val_metrics["f1_score"]:.4f}')
         
-    # Early Stopping 逻辑
-    current_val_loss = val_metrics['loss']
-    if current_val_loss < best_val_loss:
-        best_val_loss = current_val_loss
-        patience_counter = 0
-        # 如果需要在早停后恢复到最佳权重，可以在这里保存模型
-        torch.save(model.state_dict(), os.path.join(results_dir, 'best_model.pth'))
-    else:
-        patience_counter += 1
-        if patience_counter >= patience:
-            print("验证集Loss连续 {} epoch 没有提升，触发早停！".format(patience))
-            break  # 结束训练循环
+        # Early Stopping 逻辑
+        current_val_loss = val_metrics['loss']
+        if current_val_loss < best_val_loss:
+            best_val_loss = current_val_loss
+            patience_counter = 0
+            # 如果需要在早停后恢复到最佳权重，可以在这里保存模型
+            torch.save(model.state_dict(), os.path.join(results_dir, 'best_model.pth'))
+        else:
+            patience_counter += 1
+            if patience_counter >= patience:
+                print("验证集Loss连续 {} epoch 没有提升，触发早停！".format(patience))
+                break  # 结束训练循环
 
 
     # 最终评估

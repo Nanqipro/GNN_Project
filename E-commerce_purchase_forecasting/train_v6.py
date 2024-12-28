@@ -351,7 +351,7 @@ def main():
     }
 
     # 训练参数
-    epochs = 30
+    epochs = 150
 
     # 初始化历史记录
     history = {
